@@ -1,40 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 20 16:14:14 2021
+Created on Sun Nov 14 17:16:16 2021
 
-@author: jn89b
-
-Astar 
-take in grid size
-take in collision objects 
-take in x amount of drones
+@author: jnguy
 """
-from queue import PriorityQueue
-from scipy import spatial
-
+import sys
 import numpy as np
-import collections
-import heapq
-import numpy as np 
-import matplotlib.pyplot as plt
-import math as m
-
-class PreFlightPlanner():
-    """Look at unique permutations for zone assignments
-    and run order
-    if run order creates and """
-    def __init__(self):
-        pass
-
-class UAV():
-    """this is a fake uav has an id and position"""
-    def __init__(self, id_name , position, index, goal):
-        self.id = id_name
-        self.starting_position = position 
-        self.goalpoint = goal
-        self.zone_index = index
-        self.path = None
-        self.offset_path = None
+import math 
+from scipy import spatial
+from queue import PriorityQueue
 
 class Node():
     """
@@ -63,15 +37,15 @@ class Node():
     def __repr__(self):
         return ('({0},{1})'.format(self.position, self.f))
     
-    
 class Astar():
-
+    """Astar"""
     def __init__(self, grid, obs_list,start, goal):
         self.grid = grid
-        self.start = start
+        self.start = [int(i) for i in start]
+        print("start is", start)
         self.goal = goal
-        print("starting", start, goal)
-        self.collision_bubble = 4.0
+        print("goal is", goal)
+        self.collision_bubble = 3.5
         self.height_boundary = 20
         self.ground_boundary = 5
         
@@ -112,15 +86,23 @@ class Astar():
             return False
     
     def is_target_close(self, position, goal):
+        """refactor this, just have distance as input"""
         """check if we are close to target if so we remove the penalty heuristic for 
         flying high or low"""
-        distance = self.compute_euclidean(position, goal)
-        
+        distance = self.compute_euclidean(position,goal)
         if distance <= 1.5:
             return True
+
+    def compute_euclidean(self,position, goal):
+        """compute euclidiean with position and goal as 3 vector component"""
+        distance =  math.sqrt(((position[0] - goal.position[0]) ** 2) + 
+                        ((position[1] - goal.position[1]) ** 2) +
+                        ((position[2] - goal.position[2]) ** 2))
         
+        return distance
+
     #This function return the path of the search
-    def return_path(self,current_node, grid):
+    def return_path(self, current_node, grid):
         path = []
         no_rows = len(grid)
         no_columns = len(grid)
@@ -141,15 +123,6 @@ class Astar():
             
         return path
     
-    
-    def compute_euclidean(self,position, goal):
-        """compute euclidean distance"""
-        distance =  m.sqrt(((position[0] - goal.position[0]) ** 2) + 
-                           ((position[1] - goal.position[1]) ** 2) +
-                           ((position[2] - goal.position[2]) ** 2))
-        
-        return distance
-    
     def main(self):
         ss = 1
         move  =  [[ss, 0, 0 ], # go forward
@@ -165,12 +138,13 @@ class Astar():
         
         self.init_node()
         count = 0 
+
         """main implementation"""
         while not self.openset.empty():
         #while len(self.openset) > 0:
             count = count + 1
             #print(count)
-            if count >= 2000:
+            if count >= 4000:
                 print("iterations too much")
                 return self.closedset
             
@@ -184,25 +158,23 @@ class Astar():
             #check if we hit the goal 
             if current_node.position == self.end_node.position:
                 #print("Goal reached", current_node.position)
-                path = self.return_path(current_node, grid)
+                path = self.return_path(current_node, self.grid)
                 print("success!", count)
                 return path
   
             #move generation
             children = []
             for new_position in move:
-
-                # Get node position
-                #print(current_node.position)
                 
                 node_position = (current_node.position[0] + new_position[0], current_node.position[1] + new_position[1],  current_node.position[2] + new_position[2])
-                #print(node_position)
+
                 # Make sure within range (check if within maze boundary)
                 if self.is_move_valid(node_position) == False:
                     #print("move is invalid")
                     continue
         
                 # Make sure walkable terrain
+                #print("checking node", node_position)
                 if self.grid[node_position] != 0:
                     #print("not walkable")
                     continue
@@ -236,163 +208,19 @@ class Astar():
                 """Heuristic costs calculated here, this is using eucledian distance"""
                 #print("child.position", child.position)
                 if self.is_target_close(current_node.position, self.end_node):
-                    print("current_node", current_node.position)
-                    print("target is close", current_node.position)
-                    cost = self.compute_euclidean(current_node.position, child)
+                    #print("current_node", current_node.position)
                     child.g = current_node.g + 1
                     child.h = self.compute_euclidean(child.position, self.end_node)
                     dynamic_weight = 0.5
                     child.f = child.g + (child.h *penalty*dynamic_weight)
-                    print(child.f)
+                    #print(child.f)
                 else:
-                    cost = self.compute_euclidean(current_node.position, child)
                     #print(current_node.g)
                     child.g = current_node.g + 1
                     dynamic_weight = 1.5
                     child.h = self.compute_euclidean(child.position, self.end_node)
                     child.f = child.g + (child.h *penalty*dynamic_weight)
-                #print(child.f)
                 
                 #add to open set
                 #print("putting in", child)
                 self.openset.put((child.f, child))
-
-
-#%% general function setup
-def generate_grid(grid_row, grid_col, grid_height):
-    """generate grids"""
-    grid = []
-    grid = np.zeros((grid_height, grid_row, grid_col))
-    
-    return grid
-
-def add_obstacles(grid, obstacle_list):
-    """"add obstacles to grid location"""
-    for obstacle in obstacle_list:
-        (grid[obstacle[2],obstacle[0], obstacle[1]]) = 1
-        
-    return obstacle_list
-
-
-
-def compute_actual_euclidean(position, goal):
-    distance =  (((position[0] - goal.position[0]) ** 2) + 
-                       ((position[1] - goal.position[1]) ** 2) +
-                       ((position[2] - goal.position[2]) ** 2))**(1/2)
-    
-    return distance
-    
-#plot_path(grid_z, grid_x , grid_y, uav_0.path, obstacle_list, uav_0.goalpoint)
-def plot_path(grid_z, grid_x, grid_y, waypoint_list, obstacles, goal):
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.set_xlim([-1, grid_x])
-    ax.set_ylim([-1, grid_y])
-    ax.set_zlim([-1, 30])
-
-    for obstacle in obstacles:
-       ax.scatter(obstacle[0],obstacle[1], obstacle[2], color='red')
-       
-    #plot waypoints
-    x = [x[0] for x in waypoint_list]
-    y = [y[1] for y in waypoint_list]
-    z = [z[2] for z in waypoint_list]
-    ax.plot3D(x,y,z, 'bo', linestyle="-")
-    ax.scatter(goal[0], goal[1], goal[2], color='purple', marker="+")
-
-    plt.grid()
-    plt.show()
-
-
-def return_other_zones(zones, index):
-    """return all other zones not assigned to uav to make as a no fly zone"""
-    copy = zones
-    copy.pop(index)
-    return copy
-
-def return_other_uavs(uavs, uav_index):
-    """return all other zones not assigned to uav to make as a no fly zone"""
-    copy = uavs
-    copy.pop(uav_index)
-    return copy
-
-
-def get_offset_wp(uav_path, home_base_loc):
-    array = np.array(uav_path)
-    result = (array[:,0] - homebase_loc[0], array[:,1] - homebase_loc[1], array[:,2])
-    x = result[0]
-    y = result[1]
-    z = result[2]
-    offset_wp = [list(coords) for coords in zip(x,y,z) ]
-    
-    return offset_wp
-
-
-if __name__ == '__main__':
-    grid_z = 50 # this is probably the z axis
-    grid_x = 50 # this is x
-    grid_y = 50 # this is y
-    grid = generate_grid(grid_z, grid_x,grid_y)
-    
-    static_obstacle_list = [(30,10)]
-    homebase_loc = [grid_x/2, grid_y/2]
-    
-    some_list = []
-    for static_obstacle in static_obstacle_list:
-        x = static_obstacle[0]
-        y = static_obstacle[1]
-        for z in range(25):
-            some_list.append((x,y,z))
-    
-    obstacle_list = some_list
-    obstacle_list = add_obstacles(grid, obstacle_list)
-    
-    landing_zones = [(20, 20,5), (20,30,5), (30, 20, 5), (30, 30, 5)]
-    
-    #uav0
-    uav_0 = UAV("uav0", [5,0,12], 1, landing_zones[1])
-    uav_1 = UAV("uav1", [5,5,12], 2, landing_zones[2])
-    uav_2 = UAV("uav2", [0,3,10], 0, landing_zones[0])
-    uav_3 = UAV("uav3", [10,0,12], 3, landing_zones[3])          
-    
-    uav_list = [uav_0, uav_1, uav_2, uav_3]
-    uav_loc = [uav_0.starting_position, uav_1.starting_position, uav_2.starting_position, uav_3.starting_position]
-    
-    waypoint_dict={}
-    offset_waypoint_dict={}
-    
-
-    # astar = Astar(grid, obstacle_list,  uav_0.starting_position, uav_0.goalpoint)
-    # uav_0.path = astar.main()
-
-    # #plot_path(grid_z, grid_x, grid_y, waypoint_list, obstacles, goal):
-    # plot_path(grid_z, grid_x ,grid_y, uav_0.path, obstacle_list, uav_0.goalpoint)
-    
-    # astar = Astar(grid, obstacle_list,  uav_1.starting_position, uav_1.goalpoint)
-    # uav_1.path = astar.main()
-
-    # #plot_path(grid_z, grid_x, grid_y, waypoint_list, obstacles, goal):
-    # plot_path(grid_z, grid_x ,grid_y, uav_1.path, obstacle_list, uav_1.goalpoint)
-            
-    
-    waypoint_dict = {}
-    path_obst = []
-    for idx, uav in enumerate(uav_list):
-        print(idx)
-        if idx == 0:
-            new_obstacle = obstacle_list + return_other_zones(landing_zones[:], uav.zone_index) + return_other_uavs(uav_loc[:], idx)
-        else:
-            #append more than path to uav
-            path_obst.append(uav_list[idx-1].path)
-            flat_list = [item for sublist in path_obst for item in sublist]
-            new_obstacle = obstacle_list + return_other_zones(landing_zones[:], uav.zone_index) + return_other_uavs(uav_loc[:], idx) + flat_list
-            
-        grid_copy = grid.copy()
-        new_obstacle = add_obstacles(grid_copy, new_obstacle)
-        astar = Astar(grid_copy, new_obstacle,  uav.starting_position, uav.goalpoint)
-        uav.path = astar.main()
-        uav.offset_wp = get_offset_wp(uav.path, homebase_loc)
-        waypoint_dict[uav.id] = uav.path
-        offset_waypoint_dict[uav.id] = uav.offset_wp
-        plot_path(grid_z, grid_x, grid_y, uav.path, new_obstacle , uav.goalpoint) 
-
