@@ -14,20 +14,8 @@ import matplotlib.pyplot as plt
 import Drone
 import UTMDatabase
 import PathFinding
-"""
-things to do 
-need landing database
-    - this is where I have inputs of UAVS 
-need pre landing service 
-need path sender service
-am I really using 
-need post landing service
+import multiprocessing 
 
-"""
-
-"""
-set up path planner modules
-"""
 
 class HomeBase():
     LANDING_ZONES = {"Zone_0": [20, 20],
@@ -96,7 +84,6 @@ class LandingZone():
     def set_vacancy(self, yes_or_no):
         """accessor"""
         self.vacant = yes_or_no
-    
 
 class PreLandingService():
     def __init__(self, homeBase, landing_db):
@@ -104,10 +91,7 @@ class PreLandingService():
         self.landingDb = landing_db
         self.uav_service_state_num = 0
     
-    def get_uavs(self):
-        """get uavs that are in a specific state"""
-        pass
-    
+
     def generate_grid(self):
         """generates search space based on parameters"""
         grid = []
@@ -187,7 +171,7 @@ class PreLandingService():
         return np.cross(vector_1, vector_2)
 
     def reduce_waypoints(self,waypoint_list):
-        print(waypoint_list)
+        """reduce waypoints"""
         filtered_waypoints = []
         for i, waypoint in enumerate(waypoint_list):
             if i+2 - len(waypoint_list) == 0:
@@ -225,7 +209,7 @@ class PreLandingService():
         return uav_loc_list
             
     def main(self):
-        """main implementation """
+        """main implementation"""
         grid = self.generate_grid()
         obstacle_list = self.generate_3d_obstacles(HomeBase.STATIC_OBSTACLE,25)
         obstacle_list = self.add_obstacles(grid, obstacle_list)
@@ -249,7 +233,7 @@ class PreLandingService():
                 
                 """get waypoints to arrive to landing zone"""
                 uav_wp, uav_filtered_wp = self.find_waypoints(grid_copy, new_obstacle, uav)
-                uav.set_path(uav_filtered_wp)
+                uav.set_path(uav_wp)
                 self.homeBase.set_landing_zone_vacancy(open_zones[zone_index].zone_name, False)
                 
                 """set new obstacles"""
@@ -261,15 +245,328 @@ class PreLandingService():
             else:
                 print("No open Zones")
                 
+class PathSenderService():
+    """send uav waypoints"""
+    def __init__(self, landing_db):
+        self.landingDb = landing_db
+        self.search_service_number = 0
+        self.update_service_number = 1 
+                        
+    def is_arrived_to_zone(self,waypoint_coords, uav_curr_location):
+        """check if close to distance"""
+        zone_coords = np.array(waypoint_coords)
+        uav_coords = np.array(uav_curr_location)
+        dist = math.sqrt((zone_coords[0]- uav_coords[0])**2+ \
+                         (zone_coords[1]- uav_coords[1])**2) 
+        if dist <= 1.0:
+            return True
+        else:
+            return False
+        
+    def get_uavs_with_wps(self):
+        """return list of uavs that have wps"""
+        uavs_with_wp_list = []
+        for uav_id, uav in self.landingDb.items():
+            if uav.service_state == self.search_service_number and uav.path != None:
+                uavs_with_wp_list.append(uav)
                 
+        return uavs_with_wp_list
+    
+    def send_wp_commands(self, uavs_with_wp_list, uav):  
+        """send waypoint commands to uav"""
+        waypoint_list = uav.path
+        print("controlling uav", uav.id)
+        print("waypoint length", len(waypoint_list))
+        
+        for idx,wp in enumerate(waypoint_list):
+            uav.go_to_wp(uav.current_position,wp)
+            #print(idx)
+            if idx > (len(waypoint_list)-2):
+                print("reached final waypoint")
+                uav.update_service_state(self.update_service_number)
+                uav.go_to_wp(uav.current_position,waypoint_list[-1])
+                break
+
+            
+    def main(self):
+        uavs_with_wp_list = self.get_uavs_with_wps()
+        if not uavs_with_wp_list:
+            print("no drones looking for his")
+        else:
+            threads = []
+            for idx, uav in enumerate(uavs_with_wp_list[:]):
+                t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
+                t.start()
+                threads.append(t)
+                
+                if not uavs_with_wp_list:
+                    print("list is empty")
+                    break
+            
+            for t in threads:
+                t.join()
+                
+class LandingStateService():
+    """landing state service"""
+    search_service_number = 1
+    update_service_number = 2
+    
+    def __init__(self, landing_db):
+        self.landingDb = landing_db
+    
+    def get_uavs_requesting_land(self):
+        """return list of uavs that have wps"""
+        uavs_landing = []
+        for uav_id, uav in self.landingDb.items():
+            if uav.service_state == self.search_service_number:
+                uavs_landing.append(uav)
+                
+        return uavs_landing
+    
+    def allow_land(self, uavs_landing, uav):
+        landing_spot = [uav.goal[0], uav.goal[1], 0]
+        uav.path.append(tuple(landing_spot))
+        uav.go_to_wp(uav.current_position, landing_spot)
+        uav.update_service_state(self.update_service_number)
+        print("uav has landed")
+    
+    def main(self):
+        uavs_landing = self.get_uavs_requesting_land()
+        if not uavs_landing:
+            print("no drones looking for his")
+        else:
+            threads = []
+            for idx, uav in enumerate(uavs_landing[:]):
+                t = multiprocessing.Process(self.allow_land(uavs_landing, uav))
+                t.start()
+                threads.append(t)
+                
+                if not uavs_landing:
+                    print("list is empty")
+                    break
+            
+            for t in threads:
+                t.join()
+    
+class PostFlightService():
+    """this class is simliar to the preflight class"""
+    search_service_number = 2
+    update_service_number = 3
+    
+    def __init__(self, homeBase, landing_db):
+        self.homeBase = homeBase
+        self.landingDb = landing_db
+                
+    def generate_grid(self):
+        """generates search space based on parameters"""
+        grid = []
+        grid = np.zeros((self.homeBase.GRID_Z, self.homeBase.GRID_X, self.homeBase.GRID_Y))
+        
+        return grid
+
+    def generate_3d_obstacles(self, obstacle_list, height):
+        """generate 3 dimensional obstacles ie trees and buildings etc"""
+        obstacle_3d_list = []
+        for static_obstacle in obstacle_list:
+            x = static_obstacle[0]
+            y = static_obstacle[1]
+            for z in range(25):
+                obstacle_3d_list.append((x,y,z))
+        return obstacle_3d_list
+    
+    def add_obstacles(self,grid, obstacle_list):
+        """"add obstacles to grid location"""
+        
+        for obstacle in obstacle_list:
+            (grid[int(obstacle[2]),int(obstacle[0]), int(obstacle[1])]) = 1
+            
+        return obstacle_list
+    
+    def return_unassigned_list(self,some_list, index):
+        """return all other zones or uavs not assigned to uav to make as a no fly zone"""
+        #copy = [int(i) for i in some_list]
+        print("some list", some_list)
+        copy = some_list
+        copy.pop(index) 
+        return copy
+
+    def get_dynamic_obstacles(self, idx, uav_path_obs, obstacle_list,  \
+                               path_list, uav_loc_list, grid):
+        """generate dynamic obstacles from uav waypoints"""
+        #should be a function to make dynamic obstacles
+        if idx == 0:
+            new_obstacle = obstacle_list 
+        else:
+            uav_path_obs.append(path_list[idx-1])
+            flat_list = [item for sublist in uav_path_obs for item in sublist]
+            print("uav location list is", uav_loc_list)
+            new_obstacle = obstacle_list + \
+               self.return_unassigned_list(uav_loc_list[:], idx) + flat_list
+        grid_copy = grid.copy()
+        new_obstacle = self.add_obstacles(grid_copy, new_obstacle)
+
+        return grid_copy, new_obstacle
+    
+    def compute_vectors(self,point_1, point_2, point_3):
+        vector_start = np.array(point_2)- np.array(point_1)
+        vector_end = np.array(point_3) - np.array(point_2)
+        
+        return vector_start, vector_end
+        
+    def compute_cross_product(self,vector_1, vector_2):
+        return np.cross(vector_1, vector_2)
+
+    
+    def reduce_waypoints(self,waypoint_list):
+        print(waypoint_list)
+        filtered_waypoints = []
+        for i, waypoint in enumerate(waypoint_list):
+            if i+2 - len(waypoint_list) == 0:
+                filtered_waypoints.append(waypoint_list[i+1])
+                """might want to append last waypoint value to new list"""
+                return filtered_waypoints
+            
+            vec_start, vec_end = self.compute_vectors(waypoint, waypoint_list[i+1], waypoint_list[i+2])
+            cross_product = self.compute_cross_product(vec_start, vec_end)
+            if (cross_product[0] == 0 and cross_product[1] == 0
+            and cross_product[2] == 0):
+                continue
+            else:
+                #print("not collinear")
+                filtered_waypoints.append(waypoint)
+                filtered_waypoints.append(waypoint_list[i+2])
+                
+        return filtered_waypoints
+    
+    def find_waypoints(self, grid_copy, new_obstacle, uav):
+        uav_loc = uav.current_position
+        goal_point = uav.home_position
+        astar = PathFinding.Astar(grid_copy, new_obstacle,  uav_loc, goal_point)
+        uav_wp = astar.main()
+        uav_filtered_wp = self.reduce_waypoints(uav_wp)
+        return uav_wp, uav_filtered_wp
+    
+    def return_uav_loc_list(self):
+        """return list of uavs"""
+        uav_loc_list = []
+        for uav_id, uav in self.landingDb.items():
+            if uav.service_state == self.search_service_number:
+                uav_loc_list.append(uav.current_position)
+                
+        return uav_loc_list
+    
+    def get_uavs_requesting_departure(self):
+        uavs_departure = []
+        for uav_id, uav in self.landingDb.items():
+            if uav.service_state == self.search_service_number:
+                uavs_departure.append(uav)
+                
+        return uavs_departure
+    
+    def hover_up(self, uav, height_z):
+        hover_spot = [uav.current_position[0], uav.current_position[1], height_z]
+        uav.go_to_wp(uav.current_position, hover_spot)
+        
+    
+    def main(self):
+        """main implementation """
+        grid = self.generate_grid()
+        obstacle_list = self.generate_3d_obstacles(HomeBase.STATIC_OBSTACLE,25)
+        obstacle_list = self.add_obstacles(grid, obstacle_list)
+        uavs_departure = self.get_uavs_requesting_departure()
+        uav_loc_list = self.return_uav_loc_list()
+        
+        idx = 0
+        uav_path_obs = []
+        path_list = []
+        
+        for idx, uav in enumerate(uavs_departure):
+            self.hover_up(uav, 7.0)
+            """generate dynamic obstacles"""
+            grid_copy, new_obstacle = self.get_dynamic_obstacles(idx, uav_path_obs, obstacle_list, \
+                           path_list, uav_loc_list, grid)
+            
+            """get waypoints to arrive to landing zone"""
+            uav_wp, uav_filtered_wp = self.find_waypoints(grid_copy, new_obstacle, uav)
+            uav.set_path_home(uav_wp)
+            #uav.set_path(uav_filtered_wp)
+            #set the landing zone as open now
+            self.homeBase.set_landing_zone_vacancy(uav.zone_index, True)
+            
+            """set new obstacles"""
+            path_list.append(uav_wp)
+            
+            idx += 1
+            print("index", idx)
+
+class HomeSenderService():
+    """send uav waypoints"""
+    def __init__(self, landing_db):
+        self.landingDb = landing_db
+        self.search_service_number = 2
+        self.update_service_number = 3 
+                        
+    def is_arrived_to_zone(self,waypoint_coords, uav_curr_location):
+        """check if close to distance"""
+        zone_coords = np.array(waypoint_coords)
+        uav_coords = np.array(uav_curr_location)
+        dist = math.sqrt((zone_coords[0]- uav_coords[0])**2+ \
+                         (zone_coords[1]- uav_coords[1])**2) 
+        if dist <= 1.0:
+            return True
+        else:
+            return False
+        
+    def get_uavs_with_wps(self):
+        """return list of uavs that have wps"""
+        uavs_with_wp_list = []
+        for uav_id, uav in self.landingDb.items():
+            if uav.service_state == self.search_service_number and uav.path_home != None:
+                uavs_with_wp_list.append(uav)
+                
+        return uavs_with_wp_list
+    
+    def send_wp_commands(self, uavs_with_wp_list, uav):  
+        """send waypoint commands to uav"""
+        waypoint_list = uav.path
+        print("controlling uav", uav.id)
+        print("waypoint length", len(waypoint_list))
+        
+        for idx,wp in enumerate(waypoint_list):
+            uav.go_to_wp(uav.current_position,wp)
+            #print(idx)
+            if idx > (len(waypoint_list)-2):
+                print("reached final waypoint")
+                uav.update_service_state(self.update_service_number)
+                uav.go_to_wp(uav.current_position,waypoint_list[-1])
+                break
+
+            
+    def main(self):
+        uavs_with_wp_list = self.get_uavs_with_wps()
+        if not uavs_with_wp_list:
+            print("no drones looking for this")
+        else:
+            threads = []
+            for idx, uav in enumerate(uavs_with_wp_list[:]):
+                t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
+                t.start()
+                threads.append(t)
+                
+                if not uavs_with_wp_list:
+                    print("list is empty")
+                    break
+            
+            for t in threads:
+                t.join()
+
+
 if __name__ == '__main__':
     
-
-    #def __init__(id_name ,home_position, curr_position, want_service):
-    """initialize randomized values"""
-    drone2 = Drone.QuadCopter("uav0", [0,0,0], [0,1,10], True)
-    drone1 = Drone.QuadCopter("uav1", [0,0,0], [6,0,10], True)
-    uavs = [drone2, drone1]
+    """initialize randomized values I will need montecarlo randomization here"""
+    drone0 = Drone.QuadCopter("uav0", [0,1,10], [0,1,10], True)
+    drone1 = Drone.QuadCopter("uav1", [6,0,10], [6,0,10], False)
+    uavs = [drone0, drone1]  
     
     """databases"""
     overallDb = UTMDatabase.OverallDatabase(uavs)
@@ -281,9 +578,22 @@ if __name__ == '__main__':
     homeBase = HomeBase()
     preLandingService = PreLandingService(homeBase, landingDb.get_landing_db())
     preLandingService.main()
-    # grid = preLandingService.generate_grid()
-    # obstacle_list = preLandingService.generate_3d_obstacles(HomeBase.STATIC_OBSTACLE,25)
-    # obstacle_list = preLandingService.add_obstacles(grid, obstacle_list)
+    
+    pathSenderService = PathSenderService(landingDb.get_landing_db())
+    pathSenderService.main()
+    
+    landingServiceState = LandingStateService(landingDb.get_landing_db())
+    landingServiceState.main()
+    
+    postFlightService = PostFlightService(homeBase, landingDb.get_landing_db())
+    postFlightService.main()
+
+    homeSenderService = HomeSenderService(landingDb.get_landing_db())
+    homeSenderService.main()   
+    
+    
+    
+    
     
     
     

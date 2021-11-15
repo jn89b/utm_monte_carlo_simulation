@@ -79,11 +79,10 @@ class LandingDatabase(AbstractDatabaseQuery,AbstractDatabaseInsert):
     def get_landing_db(self):
         """accessor get landing database info"""
         return self.landing_db
-    
-    def return_uav_loc_list(self):
-        """return list of uavs"""
-        uav_loc_list = []
-        for uav_id, uav in self.landing_db.items():
-            uav_loc_list.append(uav.current_location)
-            
-        return uav_loc_list
+
+
+        
+        
+        
+        
+        

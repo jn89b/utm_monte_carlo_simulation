@@ -43,7 +43,7 @@ class QuadCopter():
     """
     
     speed_vector = [0.5]
-    k = 0.75
+    k = 1.0
     
     def __init__(self, id_name ,home_position, curr_position, want_service):
         self.id = id_name
@@ -54,23 +54,29 @@ class QuadCopter():
         self.path = None
         self.goal = None
         self.service_state = None
-    
+        self.wp_index = 0
+        self.path_home = None
+        
     def get_uav_state(self):
         return self.service_state
     
     def go_to_wp(self, current_position, wp):
         """
         send the drone to the waypoint position
+        waypoint is a tuple
         """
         while self.current_position != wp:
             gain = self.apply_pid(current_position, wp)
-            current_position = np.array(self.current_position) + np.array(self.current_position*gain)
+            current_position = np.array(self.current_position) + gain
             self.current_position = list(current_position)
-            if self.current_position == wp:
-                print("arrived to wp")
+            
+            if tuple(self.current_position) == wp:
+                self.update_position(wp)
+                #print("arrived to wp", self.current_position)
+                break
         
-    def update_position(self, curr_position):
-        return self.current_position
+    def update_position(self, new_position):
+        self.current_position = new_position
 
     def apply_pid(self, current_position,wp):
         """get gains needed to get to area"""
@@ -90,11 +96,15 @@ class QuadCopter():
         """mutator to assign path list"""
         self.path = path
         
+    def set_path_home(self, path_home):
+        self.path_home = path_home
+        
     def set_goal(self, goal):
         """mutator to assign goal[x,y,z] point"""
         self.goal = goal 
     
-        
+    def begin_charging(self):
+        print("I'm charging", self.id)
         
         
         

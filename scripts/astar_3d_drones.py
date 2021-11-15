@@ -360,21 +360,8 @@ if __name__ == '__main__':
     
     waypoint_dict={}
     offset_waypoint_dict={}
-    
 
-    # astar = Astar(grid, obstacle_list,  uav_0.starting_position, uav_0.goalpoint)
-    # uav_0.path = astar.main()
-
-    # #plot_path(grid_z, grid_x, grid_y, waypoint_list, obstacles, goal):
-    # plot_path(grid_z, grid_x ,grid_y, uav_0.path, obstacle_list, uav_0.goalpoint)
-    
-    # astar = Astar(grid, obstacle_list,  uav_1.starting_position, uav_1.goalpoint)
-    # uav_1.path = astar.main()
-
-    # #plot_path(grid_z, grid_x, grid_y, waypoint_list, obstacles, goal):
-    # plot_path(grid_z, grid_x ,grid_y, uav_1.path, obstacle_list, uav_1.goalpoint)
             
-    
     waypoint_dict = {}
     path_obst = []
     for idx, uav in enumerate(uav_list):
