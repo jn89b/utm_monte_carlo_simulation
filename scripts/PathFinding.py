@@ -39,13 +39,13 @@ class Node():
     
 class Astar():
     """Astar"""
-    def __init__(self, grid, obs_list,start, goal):
+    def __init__(self, grid, obs_list,start, goal, min_h,max_h):
         self.grid = grid
         self.start = [int(i) for i in start]
         print("start is", start)
         self.goal = goal
         print("goal is", goal)
-        self.collision_bubble = 3.5
+        self.collision_bubble = 4
         self.height_boundary = 20
         self.ground_boundary = 5
         
@@ -53,6 +53,8 @@ class Astar():
 
         self.openset = PriorityQueue() # priority queue
         self.closedset = {}
+        self.min_h = min_h
+        self.max_h = max_h
         #self.openset = []
 
     def is_collision(self,distance):
@@ -146,10 +148,11 @@ class Astar():
             #print(count)
             if count >= 4000:
                 print("iterations too much")
-                return self.closedset
+                return False, self.closedset
             
             if self.openset.empty():
                 print("No more moves")
+                return False, self.closedset
             
             #pop node off from priority queue and add into closedset
             cost,current_node = self.openset.get()
@@ -160,7 +163,7 @@ class Astar():
                 #print("Goal reached", current_node.position)
                 path = self.return_path(current_node, self.grid)
                 print("success!", count)
-                return path
+                return True,path
   
             #move generation
             children = []
@@ -208,16 +211,13 @@ class Astar():
                 """Heuristic costs calculated here, this is using eucledian distance"""
                 #print("child.position", child.position)
                 if self.is_target_close(current_node.position, self.end_node):
-                    #print("current_node", current_node.position)
                     child.g = current_node.g + 1
                     child.h = self.compute_euclidean(child.position, self.end_node)
-                    dynamic_weight = 0.5
+                    dynamic_weight = self.min_h
                     child.f = child.g + (child.h *penalty*dynamic_weight)
-                    #print(child.f)
                 else:
-                    #print(current_node.g)
                     child.g = current_node.g + 1
-                    dynamic_weight = 1.5
+                    dynamic_weight = self.max_h
                     child.h = self.compute_euclidean(child.position, self.end_node)
                     child.f = child.g + (child.h *penalty*dynamic_weight)
                 
