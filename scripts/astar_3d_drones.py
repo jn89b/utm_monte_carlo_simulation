@@ -350,14 +350,15 @@ if __name__ == '__main__':
     landing_zones = [(20, 20,5), (20,30,5), (30, 20, 5), (30, 30, 5)]
     
     #uav0
-    uav_0 = UAV("uav0", [5,0,12], 1, landing_zones[1])
-    uav_1 = UAV("uav1", [5,5,12], 2, landing_zones[2])
-    uav_2 = UAV("uav2", [0,3,10], 0, landing_zones[0])
-    uav_3 = UAV("uav3", [10,0,12], 3, landing_zones[3])          
+    #uav_0 = UAV("uav0", [5,0,12], 1, landing_zones[1])
+    uav_1 = UAV("uav1", [0,45,8], 2, landing_zones[2])
+    #uav_2 = UAV("uav2", [0,3,10], 0, landing_zones[0])
+    #uav_3 = UAV("uav3", [10,0,12], 3, landing_zones[3])          
     
-    uav_list = [uav_0, uav_1, uav_2, uav_3]
-    uav_loc = [uav_0.starting_position, uav_1.starting_position, uav_2.starting_position, uav_3.starting_position]
-    
+    #uav_list = [uav_0, uav_1, uav_2, uav_3]
+    #uav_loc = [uav_0.starting_position, uav_1.starting_position, uav_2.starting_position, uav_3.starting_position]
+    uav_list = [uav_1]
+    uav_loc = [uav_1.starting_position]
     waypoint_dict={}
     offset_waypoint_dict={}
 
@@ -378,8 +379,8 @@ if __name__ == '__main__':
         new_obstacle = add_obstacles(grid_copy, new_obstacle)
         astar = Astar(grid_copy, new_obstacle,  uav.starting_position, uav.goalpoint)
         uav.path = astar.main()
-        uav.offset_wp = get_offset_wp(uav.path, homebase_loc)
+        #suav.offset_wp = get_offset_wp(uav.path, homebase_loc)
         waypoint_dict[uav.id] = uav.path
-        offset_waypoint_dict[uav.id] = uav.offset_wp
+        #offset_waypoint_dict[uav.id] = uav.offset_wp
         plot_path(grid_z, grid_x, grid_y, uav.path, new_obstacle , uav.goalpoint) 
 

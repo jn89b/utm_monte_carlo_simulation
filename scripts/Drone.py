@@ -45,20 +45,25 @@ class QuadCopter():
     speed_vector = [0.5]
     k = 1.0
     
-    def __init__(self, id_name ,home_position, curr_position, want_service):
+    def __init__(self, id_name ,home_position, loiter_position, curr_position, want_service):
         self.id = id_name
         self.home_position = home_position
+        self.loiter_position = loiter_position
         self.current_position = curr_position
         self.want_service = want_service
         self.zone_index = None
         self.path = None
         self.goal = None
         self.service_state = None
+        self.distance_from_base = None 
         self.wp_index = 0
         self.path_home = None
         
     def get_uav_state(self):
         return self.service_state
+    
+    def __lt__(self, other):
+        return self.distance_from_base < other.distance_from_base
     
     def go_to_wp(self, current_position, wp):
         """
@@ -105,6 +110,9 @@ class QuadCopter():
     
     def begin_charging(self):
         print("I'm charging", self.id)
+        
+    def set_distance_from_base(self, distance_from_base):
+        self.distance_from_base = distance_from_base
         
         
         

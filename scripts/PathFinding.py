@@ -42,9 +42,9 @@ class Astar():
     def __init__(self, grid, obs_list,start, goal, min_h,max_h):
         self.grid = grid
         self.start = [int(i) for i in start]
-        print("start is", start)
+        #print("start is", start)
         self.goal = goal
-        print("goal is", goal)
+        #print("goal is", goal)
         self.collision_bubble = 4
         self.height_boundary = 20
         self.ground_boundary = 5
@@ -55,7 +55,6 @@ class Astar():
         self.closedset = {}
         self.min_h = min_h
         self.max_h = max_h
-        #self.openset = []
 
     def is_collision(self,distance):
         """check if there is a collision if so return True"""
@@ -105,6 +104,7 @@ class Astar():
 
     #This function return the path of the search
     def return_path(self, current_node, grid):
+        """return path if there is one"""
         path = []
         no_rows = len(grid)
         no_columns = len(grid)
@@ -126,6 +126,7 @@ class Astar():
         return path
     
     def main(self):
+        """main method implementation of Astar"""
         ss = 1
         move  =  [[ss, 0, 0 ], # go forward
                   [ 0, -ss, 0], # go left
@@ -143,16 +144,15 @@ class Astar():
 
         """main implementation"""
         while not self.openset.empty():
-        #while len(self.openset) > 0:
             count = count + 1
             #print(count)
-            if count >= 4000:
+            if count >= 5000:
                 print("iterations too much")
-                return False, self.closedset
+                return None
             
             if self.openset.empty():
                 print("No more moves")
-                return False, self.closedset
+                return None
             
             #pop node off from priority queue and add into closedset
             cost,current_node = self.openset.get()
@@ -163,7 +163,7 @@ class Astar():
                 #print("Goal reached", current_node.position)
                 path = self.return_path(current_node, self.grid)
                 print("success!", count)
-                return True,path
+                return path
   
             #move generation
             children = []
@@ -208,7 +208,7 @@ class Astar():
                 else:
                     penalty = 1                                                 
                 
-                """Heuristic costs calculated here, this is using eucledian distance"""
+                """Heuristic costs and determines if we want to be greedy or become more like Djikstras"""
                 #print("child.position", child.position)
                 if self.is_target_close(current_node.position, self.end_node):
                     child.g = current_node.g + 1

@@ -9,6 +9,7 @@ Need to keep track of success rate over iteration
 import sys
 import numpy as np
 import math 
+import random
 from scipy import spatial
 from queue import PriorityQueue
 import matplotlib.pyplot as plt
@@ -20,12 +21,26 @@ import multiprocessing
 from multiprocessing import Process, Manager
 
 import threading
+import time
+
+"""this will be part of the homebase class as attributes"""
+MAX_X = 100
+MAX_Y = 100
+MIN_X = -50
+MIN_Y = -50
+
+INNER_MIN_X = 0
+INNER_MIN_Y = 0
+INNER_MAX_X = 49
+INNER_MAX_Y = 49
+
 
 class HomeBase():
     GRID_Z = 50
     GRID_X = 50
     GRID_Y = 50
     STATIC_OBSTACLE = [(30,10)]
+    BASE_LOCATION = [25,25] #x,y coordinates
     
     def __init__(self):
     
@@ -33,7 +48,7 @@ class HomeBase():
     
     def generate_landing_zones(self):
         zone_db = {}
-        zone_list =  [(20, 20,5), (20,30,5), (30, 20, 5), (30, 30, 5)]
+        zone_list =  [(20, 20, 7), (20,30, 7), (30, 20, 7), (30, 30, 7)]
         for idx, zone in enumerate(zone_list):
             zone_name = "Zone_"+ str(idx)
             zone_db[zone_name] = LandingZone(zone_name, zone, True)
@@ -76,7 +91,7 @@ class HomeBase():
 
     def set_landing_zone_vacancy(self, zone_key, yes_or_no):
         """set vacancy with true or false"""
-        print("updated vacancy for", zone_key, yes_or_no)
+        #print("updated vacancy for", zone_key, yes_or_no)
         self.ZONE_DB[zone_key].set_vacancy(yes_or_no)
         
     
@@ -105,7 +120,7 @@ class PreLandingService():
         self.uav_service_state_num = 0
         self.min_h = min_h
         self.max_h = max_h
-        
+        self.uav_priority = PriorityQueue()
 
     def generate_grid(self):
         """generates search space based on parameters"""
@@ -127,9 +142,13 @@ class PreLandingService():
     def add_obstacles(self,grid, obstacle_list):
         """"add obstacles to grid location"""
         for obstacle in obstacle_list:
-            #print(obstacle)
-            (grid[obstacle[2],obstacle[0], obstacle[1]]) = 1
-            
+            if obstacle[2] >= self.homeBase.GRID_Z or \
+                obstacle[1] >= self.homeBase.GRID_X or\
+                    obstacle[0] >= self.homeBase.GRID_Y:
+                        continue
+                    
+            (grid[int(obstacle[2]),int(obstacle[0]), int(obstacle[1])]) = 1
+        
         return obstacle_list
     
 
@@ -137,7 +156,6 @@ class PreLandingService():
         """return all other zones or uavs not assigned to uav to make as a no fly zone"""
         copy = some_list
         copy.pop(index)
-        print("copy", copy)
         return copy
 
     def get_dynamic_obstacles(self, idx, uav_path_obs, obstacle_list, zone_locations, \
@@ -212,12 +230,16 @@ class PreLandingService():
         goal_point = uav.goal
         astar = PathFinding.Astar(grid_copy, new_obstacle,  uav_loc, goal_point, \
                                   self.min_h, self.max_h)
-        success_or_no, uav_wp = astar.main()
-        if success_or_no == False:
-            uav_filtered_wp = None
-        else:
+        uav_wp = astar.main()
+
+        if uav_wp:
             uav_filtered_wp = self.reduce_waypoints(uav_wp)
-        return uav_wp, uav_filtered_wp, success_or_no
+
+        else:
+            uav_wp = None
+            uav_filtered_wp = None
+            
+        return uav_wp, uav_filtered_wp
     
     def return_uav_loc_list(self):
         """return list of uavs"""
@@ -234,6 +256,7 @@ class PreLandingService():
                 uav_request_wp.append(uav)
                 
         return uav_request_wp
+    
     
     def main(self):
         """main implementation"""
@@ -260,19 +283,19 @@ class PreLandingService():
                               zone_index, path_list, uav_loc_list, grid)
                 
                 """get waypoints to arrive to landing zone"""
-                uav_wp, uav_filtered_wp, success_or_no = self.find_waypoints(grid_copy, new_obstacle, uav)
-                if success_or_no == True:
+                uav_wp, uav_filtered_wp= self.find_waypoints(grid_copy, new_obstacle, uav)
+                if uav_wp:
                     uav.set_path(uav_wp)
                     self.homeBase.set_landing_zone_vacancy(open_zones[zone_index].zone_name, False)
                     
                     """set new obstacles"""
                     path_list.append(uav_wp)
                     idx += 1
-
                 else:
-                    continue
+                    print("Failed to find path", uav.id)
+                    #return False
             else:
-                print("No open Zones")
+                continue
                 
 class PathSenderService():
     """send uav waypoints"""
@@ -304,14 +327,12 @@ class PathSenderService():
     def send_wp_commands(self, uavs_with_wp_list, uav):  
         """send waypoint commands to uav"""
         waypoint_list = uav.path
-        print("controlling uav", uav.id)
-        print("waypoint length", len(waypoint_list))
         
         for idx,wp in enumerate(waypoint_list):
             uav.go_to_wp(uav.current_position,wp)
             #print(idx)
             if idx > (len(waypoint_list)-2):
-                print("reached final waypoint")
+                #print("reached final waypoint")
                 uav.update_service_state(self.update_service_number)
                 uav.go_to_wp(uav.current_position,waypoint_list[-1])
                 break
@@ -320,7 +341,7 @@ class PathSenderService():
     def main(self):
         uavs_with_wp_list = self.get_uavs_with_wps()
         if not uavs_with_wp_list:
-            print("no drones looking")
+            print("no drones for Path Sender")
         else:
             threads = []
             for idx, uav in enumerate(uavs_with_wp_list[:]):
@@ -362,7 +383,7 @@ class LandingStateService():
     def main(self):
         uavs_landing = self.get_uavs_requesting_land()
         if not uavs_landing:
-            print("no drones looking for his")
+            print("no drones for Landing State")
         else:
             threads = []
             for idx, uav in enumerate(uavs_landing[:]):
@@ -454,7 +475,6 @@ class PostFlightService():
 
     
     def reduce_waypoints(self,waypoint_list):
-        print(waypoint_list)
         filtered_waypoints = []
         for i, waypoint in enumerate(waypoint_list):
             if i+2 - len(waypoint_list) == 0:
@@ -468,7 +488,6 @@ class PostFlightService():
             and cross_product[2] == 0):
                 continue
             else:
-                #print("not collinear")
                 filtered_waypoints.append(waypoint)
                 filtered_waypoints.append(waypoint_list[i+2])
                 
@@ -476,15 +495,19 @@ class PostFlightService():
     
     def find_waypoints(self, grid_copy, new_obstacle, uav):
         uav_loc = uav.current_position
-        goal_point = uav.home_position
+        goal_point = uav.loiter_position
         astar = PathFinding.Astar(grid_copy, new_obstacle,  uav_loc, goal_point,\
                                   self.min_h, self.max_h)
-        success_or_no, uav_wp = astar.main()
-        if success_or_no == False:
-            uav_filtered_wp = None
-        else:
+        uav_wp = astar.main()
+        
+        if uav_wp:
             uav_filtered_wp = self.reduce_waypoints(uav_wp)
-        return uav_wp, uav_filtered_wp, success_or_no
+
+        else:
+            uav_wp = None
+            uav_filtered_wp = None
+            
+        return uav_wp, uav_filtered_wp
     
     def return_uav_loc_list(self):
         """return list of uavs"""
@@ -527,18 +550,21 @@ class PostFlightService():
                            path_list, uav_loc_list, grid)
             
             """find waypoints with Astar pathfinding"""
-            uav_wp, uav_filtered_wp, success_or_no = self.find_waypoints(grid_copy, new_obstacle, uav)
-            
-            if success_or_no == True:    
-                uav.set_path_home(uav_wp)
+            uav_wp, uav_filtered_wp = self.find_waypoints(grid_copy, new_obstacle, uav)
+            #print("uav home is", uav_wp)
+            if uav_wp:
+                home_wp = uav_wp.copy()
+                home_wp.append(uav.home_position)
+                """add home position for flight home"""
+                uav.set_path_home(home_wp)
                 #uav.set_path(uav_filtered_wp)
-                #set the landing zone as open now
                 """set new obstacles"""
                 path_list.append(uav_wp)
                 idx += 1
-                print("index", idx)
+                #print("index", idx)
             else:
-                continue
+                print("Failed to find home path")
+                return False
 
 class HomeSenderService():
     """Need to refactor this code"""
@@ -571,11 +597,20 @@ class HomeSenderService():
     def send_wp_commands(self, uavs_with_wp_list, uav):  
         """send waypoint commands to uav"""
         waypoint_list = uav.path_home
-        print("SENDING HOME")
-        for idx,wp in enumerate(waypoint_list):
-            uav.go_to_wp(uav.current_position,wp)
-            #self.homeBase.ZONE_DB[uav.zone_index].set_vacancy(True)
-            if idx > (len(waypoint_list)-2):
+        #print("SENDING HOME")
+        # for idx,wp in enumerate(waypoint_list):
+        #     uav.go_to_wp(uav.current_position,wp)
+        #     if idx > (len(waypoint_list)-1):
+        #         print("reached final waypoint")
+        #         uav.update_service_state(self.update_service_number)
+        #         uav.go_to_wp(uav.current_position,waypoint_list[-1])
+        #         self.homeBase.set_landing_zone_vacancy(uav.zone_index, True)
+        #         break
+        idx = 0
+        while idx < len(waypoint_list):
+            uav.go_to_wp(uav.current_position,waypoint_list[idx])
+            idx += 1
+            if idx > (len(waypoint_list)-1):
                 print("reached final waypoint")
                 uav.update_service_state(self.update_service_number)
                 uav.go_to_wp(uav.current_position,waypoint_list[-1])
@@ -586,22 +621,111 @@ class HomeSenderService():
     def main(self):
         uavs_with_wp_list = self.get_uavs_with_wps()
         if not uavs_with_wp_list:
-            print("no drones looking for this")
+            print("no drones to send home")
         else:
-            threads = []
+            #threads = []
             for idx, uav in enumerate(uavs_with_wp_list[:]):
-                self.homeBase.set_landing_zone_vacancy(uav.zone_index, True)
-                t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
+                self.send_wp_commands(uavs_with_wp_list, uav)
+                #self.send_wp_commands(uavs_with_wp_list, uav)
+                # t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
                 
-                t.start()
-                threads.append(t)
+                # t.start()
+                # threads.append(t)
                 
                 if not uavs_with_wp_list:
                     print("list is empty")
                     break
             
-            for t in threads:
-                t.join()
+            # for t in threads:
+            #     t.join()
+
+def compute_euclidean(position, goal):
+    """compute euclidiean with position and goal as 3 vector component"""
+    distance =  math.sqrt(((position[0] - goal[0]) ** 2) + 
+                    ((position[1] - goal[1]) ** 2))
+    
+    return distance
+
+
+def check_spawn_okay(current_location, spawn_list):
+    for spawn_loc in spawn_list:
+        distance = compute_euclidean(current_location, spawn_loc)
+        if distance < 4.0:
+            return False
+    
+    return True
+
+
+def randomize_drone_outer_locations(n_drones):
+    """randommize drone locations and make sure its spaced
+    from home position and where it wants to head towards to"""    
+    """how to randomize values in this area"""
+    min_height = 8
+    max_height = 11
+    spawned_locations = []
+    loiter_locations = []
+    case = ["left", "right", "down", "up"] 
+    
+    case_edge = {
+                "left": MIN_X,
+                "right": MAX_X,
+                "down": MIN_Y,
+                "up": MAX_Y
+                }
+
+    inner_case_edge = {
+                "left": INNER_MIN_X,
+                "right": INNER_MAX_X,
+                "down": INNER_MIN_Y,
+                "up": INNER_MAX_Y
+                }
+    
+    
+    for i in range(n_drones):
+        decision = random.choice(case) 
+        if decision == "left" or decision == "right":    
+            coords = [case_edge[decision], np.random.choice(range(MIN_Y, MAX_Y)), np.random.choice(range(min_height, max_height))]
+            loiter = [inner_case_edge[decision], np.random.choice(range(INNER_MIN_Y, INNER_MAX_Y)), np.random.choice(range(min_height, max_height))]
+            if check_spawn_okay(coords, spawned_locations) == False:
+                while check_spawn_okay(coords, spawned_locations) == False:
+                    print("drones too close")
+                    coords = [case_edge[decision], np.random.choice(range(MIN_Y, MAX_Y)), np.random.choice(range(min_height, max_height))]
+            
+            if check_spawn_okay(loiter, loiter_locations) == False:
+                while check_spawn_okay(loiter, loiter_locations) == False:
+                    loiter = [inner_case_edge[decision], np.random.choice(range(INNER_MIN_Y, INNER_MAX_Y)), np.random.choice(range(min_height, max_height))]
+            
+            print(coords,loiter)
+            loiter_locations.append(loiter)
+            spawned_locations.append(coords)
+            
+        else:
+            coords = [np.random.choice(range(MIN_X, MAX_X)), case_edge[decision], np.random.choice(range(min_height, max_height))]
+            loiter = [np.random.choice(range(INNER_MIN_X, INNER_MAX_X)), inner_case_edge[decision], np.random.choice(range(min_height, max_height))]
+            if check_spawn_okay(coords, spawned_locations) == False:
+                while check_spawn_okay(coords, spawned_locations) == False:
+                    print("drones too close")
+                    coords = [np.random.choice(range(MIN_X, MAX_X)),case_edge[decision], np.random.choice(range(min_height, max_height))]
+            
+            if check_spawn_okay(loiter, loiter_locations) == False:
+                while check_spawn_okay(loiter, loiter_locations) == False:
+                    loiter = [ np.random.choice(range(INNER_MIN_X, INNER_MAX_X)), inner_case_edge[decision],np.random.choice(range(min_height, max_height))]
+            
+            #print(coords,loiter)
+            loiter_locations.append(loiter)
+            spawned_locations.append(coords)            
+
+    return spawned_locations, loiter_locations
+
+def spawn_uavs(home_position_list, loiter_locaiton_list):
+    """spawn drones"""
+    uavs_list = []
+    for idx, home_position in enumerate(home_position_list):
+        uav_id = "uav"+str(idx)
+        uav = Drone.QuadCopter(uav_id, home_position, loiter_locaiton_list[idx], loiter_locaiton_list[idx], True)
+        uavs_list.append(uav)
+
+    return uavs_list
 
 
 def check_mission_status():
@@ -609,73 +733,69 @@ def check_mission_status():
     for uav_id, uav in global_landing_db.items():
         if uav.service_state == 0 and uav.path == None:
             uavs_with_wp_list.append(uav)
-    print("uavs", uavs_with_wp_list)
+
+    #print("uavs that want waypoints", uavs_with_wp_list)
     
     return uavs_with_wp_list
 
 def test_simulation():
+    """begin simulation"""
     uavs_leftover = check_mission_status()
     homeBase = HomeBase()
+    """instantiation of Third Party Service with UTM"""
     preLandingService = PreLandingService(homeBase, global_landing_db, min_h, max_h)
     pathSenderService = PathSenderService(global_landing_db)
     landingServiceState = LandingStateService(global_landing_db)
     postFlightService = PostFlightService(homeBase, global_landing_db, min_h, max_h)
     homeSenderService = HomeSenderService(homeBase, global_landing_db)
+    
+    
     while uavs_leftover:
-        preLandingService.main()
+        prelanding_result = preLandingService.main()
+        
+        if prelanding_result == False:
+            print("mission was a failure")
+            break
+        
         pathSenderService.main()
         landingServiceState.main()
-        postFlightService.main()
+        
+        post_flight_result = postFlightService.main()
+        # if post_flight_result == False:
+        #     print("post flight was a failure ")
+        #     break
+        
         homeSenderService.main()
         uavs_leftover = check_mission_status()
+
+        """check if mission was a success"""
+        if not uavs_leftover:
+            print("mission success")
         
-    
 
 if __name__ == '__main__':
     
-    """initialize randomized values I will need montecarlo randomization here"""
-    drone0 = Drone.QuadCopter("uav0", [0,1,10], [0,1,10], True)
-    drone1 = Drone.QuadCopter("uav1", [6,0,10], [6,0,10], True)
-    drone2 = Drone.QuadCopter("uav2", [15,0,10], [15,0,10],True)
-    drone3 = Drone.QuadCopter("uav3", [0,15,10], [0,15,10], True)
-    drone4 = Drone.QuadCopter("uav4", [20,1,10], [20,1,10],True)
-
-    uavs = [drone0, drone1, drone2, drone3, drone4]  
+    """initialize randomized drones and location"""
+    n_drones = 10
+    random_home_locations, random_loiters = randomize_drone_outer_locations(n_drones)
+    random_uavs = spawn_uavs(random_home_locations, random_loiters)
     
+    """heuristics for astar"""
     min_h = 0.5
     max_h = 1.5
+    start = time.time()
     
-    """databases"""
-    overallDb = UTMDatabase.OverallDatabase(uavs)
+    homeBase = HomeBase()
+    overallDb = UTMDatabase.OverallDatabase(random_uavs)
     overall_db = overallDb.listen_for_incoming_uavs()    
-    landingDb = UTMDatabase.LandingDatabase(overall_db)
-    landingDb.does_uav_want_service()
-    
-    """multiprocessing/threading for dictionary"""
-    manager = Manager()
+    landingDb = UTMDatabase.LandingDatabase(overall_db, homeBase)
+    landingDb.main()
     global_landing_db = landingDb.get_landing_db()
-    landing_db = manager.dict(global_landing_db)
     
-    """instantiate classes"""
+    
     test_simulation()
-    #"""begin multiprocessing"""
-    # uavs_leftover = check_mission_status()
-    # homeBase = HomeBase()
-    # preLandingService = PreLandingService(homeBase, global_landing_db, min_h, max_h)
-    # pathSenderService = PathSenderService(global_landing_db)
-    # landingServiceState = LandingStateService(global_landing_db)
-    # postFlightService = PostFlightService(homeBase, global_landing_db, min_h, max_h)
-    # homeSenderService = HomeSenderService(homeBase, global_landing_db)
-    # while uavs_leftover:
-    #     preLandingService.main()
-    #     pathSenderService.main()
-    #     landingServiceState.main()
-    #     postFlightService.main()
-    #     homeSenderService.main()
-    #     uavs_leftover = check_mission_status()
-    #     if not uavs_leftover:
-    #         print("Simulation is over")
     
+    print("time it takes", time.time() - start)    
         
 
         
