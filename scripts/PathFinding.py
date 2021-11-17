@@ -42,10 +42,10 @@ class Astar():
     def __init__(self, grid, obs_list,start, goal, min_h,max_h):
         self.grid = grid
         self.start = [int(i) for i in start]
-        #print("start is", start)
+        print("start is", start)
         self.goal = goal
-        #print("goal is", goal)
-        self.collision_bubble = 4
+        print("goal is", goal)
+        self.collision_bubble = 4.0
         self.height_boundary = 20
         self.ground_boundary = 5
         
@@ -146,7 +146,7 @@ class Astar():
         while not self.openset.empty():
             count = count + 1
             #print(count)
-            if count >= 5000:
+            if count >= 2000:
                 print("iterations too much")
                 return None
             

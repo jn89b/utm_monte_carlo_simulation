@@ -170,7 +170,7 @@ class Astar():
         #while len(self.openset) > 0:
             count = count + 1
             #print(count)
-            if count >= 2000:
+            if count >= 5000:
                 print("iterations too much")
                 return self.closedset
             
@@ -241,14 +241,14 @@ class Astar():
                     cost = self.compute_euclidean(current_node.position, child)
                     child.g = current_node.g + 1
                     child.h = self.compute_euclidean(child.position, self.end_node)
-                    dynamic_weight = 0.5
+                    dynamic_weight = 5.0
                     child.f = child.g + (child.h *penalty*dynamic_weight)
                     print(child.f)
                 else:
                     cost = self.compute_euclidean(current_node.position, child)
                     #print(current_node.g)
                     child.g = current_node.g + 1
-                    dynamic_weight = 1.5
+                    dynamic_weight = 5.0
                     child.h = self.compute_euclidean(child.position, self.end_node)
                     child.f = child.g + (child.h *penalty*dynamic_weight)
                 #print(child.f)
@@ -350,15 +350,15 @@ if __name__ == '__main__':
     landing_zones = [(20, 20,5), (20,30,5), (30, 20, 5), (30, 30, 5)]
     
     #uav0
-    #uav_0 = UAV("uav0", [5,0,12], 1, landing_zones[1])
-    uav_1 = UAV("uav1", [0,45,8], 2, landing_zones[2])
-    #uav_2 = UAV("uav2", [0,3,10], 0, landing_zones[0])
-    #uav_3 = UAV("uav3", [10,0,12], 3, landing_zones[3])          
+    uav_0 = UAV("uav0", [33, 49, 8], 1, landing_zones[1])
+    uav_1 = UAV("uav1", [0, 20, 10], 2, landing_zones[2])
+    uav_2 = UAV("uav2", [13, 0, 9], 0, landing_zones[0])
+    uav_3 = UAV("uav3", [44, 0, 10], 3, landing_zones[3])          
     
-    #uav_list = [uav_0, uav_1, uav_2, uav_3]
-    #uav_loc = [uav_0.starting_position, uav_1.starting_position, uav_2.starting_position, uav_3.starting_position]
-    uav_list = [uav_1]
-    uav_loc = [uav_1.starting_position]
+    uav_list = [uav_0, uav_1, uav_2, uav_3]
+    uav_loc = [uav_0.starting_position, uav_1.starting_position, uav_2.starting_position, uav_3.starting_position]
+    #uav_list = [uav_1]
+    #uav_loc = [uav_1.starting_position]
     waypoint_dict={}
     offset_waypoint_dict={}
 

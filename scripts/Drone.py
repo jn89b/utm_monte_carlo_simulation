@@ -114,6 +114,7 @@ class QuadCopter():
     def set_distance_from_base(self, distance_from_base):
         self.distance_from_base = distance_from_base
         
-        
+    def get_service_state(self):
+        return self.service_state
         
         

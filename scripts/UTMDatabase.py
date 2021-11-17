@@ -34,18 +34,17 @@ class AbstractDatabaseQuery():
 
 class OverallDatabase(AbstractDatabaseQuery,AbstractDatabaseInsert):
     
-    def __init__(self, uav_list):
+    def __init__(self):
         self.db = {}
-        self.uav_list = uav_list
         
     def check_duplicate(self,uav):
         """check if uav is already in the database"""
         if uav in self.db:
             return True
     
-    def listen_for_incoming_uavs(self):
+    def listen_for_incoming_uavs(self, uav_list):
         """listen for incoming uavs"""
-        for uav in self.uav_list:
+        for uav in uav_list:
             
             if self.check_uav_has_id(uav) is False:
                 #print("print uav has no ids")
@@ -60,6 +59,7 @@ class OverallDatabase(AbstractDatabaseQuery,AbstractDatabaseInsert):
     def check_uav_has_id(self, uav):
         if uav.id == None:
             return False
+        
 
 class LandingDatabase(AbstractDatabaseQuery,AbstractDatabaseInsert):
     def __init__(self, overall_db, homeBase):
