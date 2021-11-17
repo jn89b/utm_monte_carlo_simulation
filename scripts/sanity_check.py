@@ -25,10 +25,10 @@ import time
 import gc
 
 """this will be part of the homebase class as attributes"""
-MAX_X = 100
-MAX_Y = 100
-MIN_X = -50
-MIN_Y = -50
+MAX_X = 200
+MAX_Y = 200
+MIN_X = -100
+MIN_Y = -100
 
 INNER_MIN_X = 0
 INNER_MIN_Y = 0
@@ -287,7 +287,6 @@ class PreLandingService():
                 """generate dynamic obstacles"""
                 grid_copy, new_obstacle = self.get_dynamic_obstacles(idx, uav_path_obs, obstacle_list, open_zones_locs, \
                               zone_index, path_list, uav_loc_list, grid)
-                print(new_obstacle)
                 """get waypoints to arrive to landing zone"""
                 uav_wp, uav_filtered_wp= self.find_waypoints(grid_copy, new_obstacle, uav)
                 if uav_wp:
@@ -618,7 +617,7 @@ class HomeSenderService():
     def send_wp_commands(self, uavs_with_wp_list, uav):  
         """send waypoint commands to uav"""
         waypoint_list = uav.path_home
-        #print("SENDING HOME")
+        print("SENDING HOME")
         # for idx,wp in enumerate(waypoint_list):
         #     uav.go_to_wp(uav.current_position,wp)
         #     if idx > (len(waypoint_list)-1):
@@ -644,10 +643,10 @@ class HomeSenderService():
         if not uavs_with_wp_list:
             print("no drones to send home")
         else:
-            #threads = []
+            threads = []
             for idx, uav in enumerate(uavs_with_wp_list[:]):
-                self.send_wp_commands(uavs_with_wp_list, uav)
                 #self.send_wp_commands(uavs_with_wp_list, uav)
+                self.send_wp_commands(uavs_with_wp_list, uav)
                 # t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
                 
                 # t.start()
@@ -771,8 +770,6 @@ def test_simulation():
     postFlightService = PostFlightService(homeBase, global_landing_db, min_h, max_h)
     homeSenderService = HomeSenderService(homeBase, global_landing_db)
     
-    
-    count = 0
     while uavs_leftover:
         
         prelanding_result = preLandingService.main()
@@ -790,7 +787,8 @@ def test_simulation():
         
         if post_flight_result == False:
             print("post flight was a failure ")
-
+            break
+            
         homeSenderService.main()
         uavs_leftover = check_mission_status()
     
@@ -798,19 +796,18 @@ def test_simulation():
         """check if mission was a success"""
         if not uavs_leftover:
             print("mission success")
-            print("count was", count)
-        
+    
 
 if __name__ == '__main__':
     
     """initialize randomized drones and location"""
-    n_drones = 15
+    n_drones = 6
     random_home_locations, random_loiters = randomize_drone_outer_locations(n_drones)
     random_uavs = spawn_uavs(random_home_locations, random_loiters)
     
     """heuristics for astar"""
     min_h = 0.5
-    max_h = 10.0
+    max_h = 5.0
     start = time.time()
     
     homeBase = HomeBase()
