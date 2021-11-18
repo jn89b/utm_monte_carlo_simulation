@@ -14,15 +14,23 @@ from scipy import spatial
 from queue import PriorityQueue
 import matplotlib.pyplot as plt
 
+"""UTM drones"""
 import Drone
 import UTMDatabase
 import PathFinding
-import multiprocessing 
-from multiprocessing import Process, Manager
 
-import threading
+"""multithreading and garbage collection processes"""
 import time
 import gc
+import multiprocessing 
+
+
+"""Python Loggin packages"""
+import os
+import logging
+import csv
+import io
+import pandas as pd
 
 """this will be part of the homebase class as attributes"""
 MAX_X = 200
@@ -49,7 +57,7 @@ class HomeBase():
     
     def generate_landing_zones(self):
         zone_db = {}
-        zone_list =  [(20, 20, 7), (20,30, 7), (30, 20, 7), (30, 30, 7)]
+        zone_list =  [(20, 20, 5), (20,30, 5), (30, 20, 5), (30, 30, 5)]
         for idx, zone in enumerate(zone_list):
             zone_name = "Zone_"+ str(idx)
             zone_db[zone_name] = LandingZone(zone_name, zone, True)
@@ -617,7 +625,7 @@ class HomeSenderService():
     def send_wp_commands(self, uavs_with_wp_list, uav):  
         """send waypoint commands to uav"""
         waypoint_list = uav.path_home
-        print("SENDING HOME")
+        print("SENDING HOME ", uav.id)
         # for idx,wp in enumerate(waypoint_list):
         #     uav.go_to_wp(uav.current_position,wp)
         #     if idx > (len(waypoint_list)-1):
@@ -645,7 +653,6 @@ class HomeSenderService():
         else:
             threads = []
             for idx, uav in enumerate(uavs_with_wp_list[:]):
-                #self.send_wp_commands(uavs_with_wp_list, uav)
                 self.send_wp_commands(uavs_with_wp_list, uav)
                 # t = multiprocessing.Process(self.send_wp_commands(uavs_with_wp_list, uav))
                 
@@ -658,13 +665,6 @@ class HomeSenderService():
             
             # for t in threads:
             #     t.join()
-
-def compute_euclidean(position, goal):
-    """compute euclidiean with position and goal as 3 vector component"""
-    distance =  math.sqrt(((position[0] - goal[0]) ** 2) + 
-                    ((position[1] - goal[1]) ** 2))
-    
-    return distance
 
 
 def check_spawn_okay(current_location, spawn_list):
@@ -679,7 +679,7 @@ def check_spawn_okay(current_location, spawn_list):
 def randomize_drone_outer_locations(n_drones):
     """randommize drone locations and make sure its spaced
     from home position and where it wants to head towards to"""    
-    """how to randomize values in this area"""
+    """how to randomize values in this area need to refactor this"""
     min_height = 8
     max_height = 11
     spawned_locations = []
@@ -748,82 +748,172 @@ def spawn_uavs(home_position_list, loiter_locaiton_list):
     return uavs_list
 
 
-def check_mission_status():
+def check_mission_status(global_landing_db):
     uavs_with_wp_list = []
     for uav_id, uav in global_landing_db.items():
         if uav.service_state == 0 and uav.path == None:
             uavs_with_wp_list.append(uav)
-
-    #print("uavs that want waypoints", uavs_with_wp_list)
     
     return uavs_with_wp_list
 
-
-def test_simulation():
-    """begin simulation"""
-    uavs_leftover = check_mission_status()
-    homeBase = HomeBase()
-    """instantiation of Third Party Service with UTM"""
-    preLandingService = PreLandingService(homeBase, global_landing_db, min_h, max_h)
-    pathSenderService = PathSenderService(homeBase,global_landing_db)
-    landingServiceState = LandingStateService(global_landing_db)
-    postFlightService = PostFlightService(homeBase, global_landing_db, min_h, max_h)
-    homeSenderService = HomeSenderService(homeBase, global_landing_db)
-    
-    while uavs_leftover:
-        
-        prelanding_result = preLandingService.main()
-        if prelanding_result == False:
-            print("mission fail")
-            break
-        
-        """garbage collection"""
-        gc.collect()
-        
-        pathSenderService.main()
-        landingServiceState.main()
-        post_flight_result = postFlightService.main()
-        
-        
-        if post_flight_result == False:
-            print("post flight was a failure ")
-            break
-            
-        homeSenderService.main()
-        uavs_leftover = check_mission_status()
-    
-        
-        """check if mission was a success"""
-        if not uavs_leftover:
-            print("mission success")
-    
-
-if __name__ == '__main__':
-    
+def begin_randomization(n_drones):
     """initialize randomized drones and location"""
-    n_drones = 6
     random_home_locations, random_loiters = randomize_drone_outer_locations(n_drones)
     random_uavs = spawn_uavs(random_home_locations, random_loiters)
     
-    """heuristics for astar"""
-    min_h = 0.5
-    max_h = 5.0
-    start = time.time()
+    return random_uavs    
+
+def compute_path_length(point_list):
+    """compute the total waypoint path"""
+    apts = np.array(point_list)
+    apts = apts[:,:2]
+    lengths = np.sqrt(np.sum(np.diff(apts, axis=0)**2, axis=1)) # Length between corners
+    path_length = np.sum(lengths)
+    return path_length
+
+
+def compute_euclidean(position, goal):
+    """compute euclidiean with position and goal as 3 vector component"""
+    distance =  math.sqrt(((position[0] - goal[0]) ** 2) + 
+                    ((position[1] - goal[1]) ** 2))
     
+    return distance
+
+
+def run_utm(n_simulations, min_drones, max_drones):
+    """begin simulation"""
     homeBase = HomeBase()
-    overallDb = UTMDatabase.OverallDatabase()
+    performance = []
     
-    
-    overall_db = overallDb.listen_for_incoming_uavs(random_uavs)    
-    landingDb = UTMDatabase.LandingDatabase(overall_db, homeBase)
-    landingDb.main()
-    global_landing_db = landingDb.get_landing_db()
-    
-    
-    test_simulation()
-    
-    print("time it takes", time.time() - start)    
+    for i in range(0,n_simulations):
+        """garbage collection"""
+        gc.collect()    
+
+        n_drones = np.random.choice((min_drones,max_drones))
+        random_uavs = begin_randomization(n_drones)
+        overallDb = UTMDatabase.OverallDatabase()
+        overall_db = overallDb.listen_for_incoming_uavs(random_uavs)    
         
+        landingDb = UTMDatabase.LandingDatabase(overall_db, homeBase)
+        landingDb.main()
+        global_landing_db = landingDb.get_landing_db()
+        
+        """instantiation of Third Party Service with UTM"""
+        preLandingService = PreLandingService(homeBase, global_landing_db, min_h, max_h)
+        pathSenderService = PathSenderService(homeBase,global_landing_db)
+        landingServiceState = LandingStateService(global_landing_db)
+        postFlightService = PostFlightService(homeBase, global_landing_db, min_h, max_h)
+        homeSenderService = HomeSenderService(homeBase, global_landing_db)
+        
+        uavs_leftover = check_mission_status(global_landing_db)
+        
+        while uavs_leftover:
+            print("starting simulation")
+            prelanding_result = preLandingService.main()
+            if prelanding_result == False:
+                print("mission fail")
+                performance.append(False)
+                """log data"""
+                logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
+                logger.write_csv()
+                break
+        
+            pathSenderService.main()
+            landingServiceState.main()
+            post_flight_result = postFlightService.main()
+            
+            if post_flight_result == False:
+                print("post flight was a failure ")
+                logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
+                logger.write_csv()
+                performance.append(False)
+                break
+                
+            homeSenderService.main()
+            uavs_leftover = check_mission_status(global_landing_db)
+        
+            """check if mission was a success"""
+            if not uavs_leftover:
+                print("mission success")
+                for uav_id, uav in global_landing_db.items():
+                    #multiply by 2 since its backwards and forwards
+                    ideal_path = 2*compute_euclidean(uav.loiter_position, uav.goal) 
+                    init_path = compute_path_length(uav.path)
+                    final_path = compute_path_length(uav.path_home[:-1])
+                    if (ideal_path)/(init_path + final_path) <= 0.65:
+                        print("not an ideal path")
+                        performance.append(False)
+                        logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
+                        logger.write_csv()
+                        break
+                    else:    
+                        performance.append(True)
+                        logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, True)
+                        logger.write_csv()
+                        break
+                
+    return performance, global_landing_db,n_drones
+
+class MonteCarloLogger():
+    """
+    Name the following:
+        - file name as follows:
+            sim_#_n_drones.csv
+        - set file path as well
+        - record dictionary information as follows:
+            - n drones
+            - heuristics
+            - uav flight path based on order of control
+            - success or failure 
+    """
+    def __init__(self, sim_num, n_drones, dict_db, performance):
+        self.sim_num = sim_num
+        self.n_drones = n_drones
+        self.dict_db = dict_db
+        self.performance = performance
+        
+        self.save_path = os.getcwd() + "\logs"
+        self.filename = "simnum_"+str(sim_num)+"_drones_"+ str(n_drones)
+        self.complete_directory =  os.path.join(self.save_path, self.filename+".csv")
+        #complete_directory = os.path.join(save_path, filename+".csv")
+        
+    def convert_info_to_list(self):
+        dataframe_list = []
+        for idx, (uav_id, uav) in enumerate(self.dict_db.items()):
+            uav.set_mission_success(self.performance)
+            dataframe_list.append(uav.to_dict())
+        
+        return dataframe_list
+    
+    def write_csv(self):
+        dataframe_list = self.convert_info_to_list()
+        keys = dataframe_list[0].keys()
+        with open( self.complete_directory, 'w', newline='') as output_file:
+            dict_writer = csv.DictWriter(output_file, keys)
+            dict_writer.writeheader()
+            dict_writer.writerows(dataframe_list)
+        
+        print("recorded information to ", self.complete_directory)
+        
+if __name__ == '__main__':    
+    """weighted heuristics for astar"""
+    min_h = 0.5
+    max_h = 1.5
+    start = time.time()
+    n_simulations = 1
+    min_uavs = 3
+    max_uavs = 5
+    performance, db, n_drones = run_utm(n_simulations, min_uavs, max_uavs)
+    print("time it takes", time.time() - start)         
+    
+    """convert uav information into dictionary and append to list"""
+    # logger = MonteCarloLogger(n_simulations, n_drones, db)
+    # logger.write_csv()
+    
+        
+    # df = pd.read_csv(logger.complete_directory)
+    
+            
 
         
 

@@ -43,7 +43,7 @@ class QuadCopter():
     """
     
     speed_vector = [0.5]
-    k = 1.0
+    k = 0.85
     
     def __init__(self, id_name ,home_position, loiter_position, curr_position, want_service):
         self.id = id_name
@@ -58,6 +58,7 @@ class QuadCopter():
         self.distance_from_base = None 
         self.wp_index = 0
         self.path_home = None
+        self.mission_success = None # true or false based on success rate of mission
         
     def get_uav_state(self):
         return self.service_state
@@ -108,6 +109,9 @@ class QuadCopter():
         """mutator to assign goal[x,y,z] point"""
         self.goal = goal 
     
+    def set_mission_success(self, true_or_false):
+        self.mission_success = true_or_false
+    
     def begin_charging(self):
         print("I'm charging", self.id)
         
@@ -116,5 +120,15 @@ class QuadCopter():
         
     def get_service_state(self):
         return self.service_state
+    
+    def to_dict(self):
+        return {
+            'uav_id': self.id,
+            'path_to_target': self.path,
+            'path_to_home': self.path_home,
+            'zone assigned': self.zone_index,
+            'zone location': self.goal,
+            'mission success?' : self.mission_success
+            }
         
         

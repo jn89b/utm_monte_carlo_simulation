@@ -117,9 +117,36 @@ def spawn_uavs(home_position_list, loiter_locaiton_list):
 
     return uavs_list
 
+def compute_euclidean(position, goal):
+    """compute euclidiean with position and goal as 2 vector component"""
+    distance =  math.sqrt(((position[0] - goal[0]) ** 2) + 
+                    ((position[1] - goal[1]) ** 2))
+    
+    return distance
 
+def compute_path_length(point_list):
+    """compute the total waypoint path"""
+    apts = np.array(pts)
+    apts = apts[:,:2]
+    lengths = np.sqrt(np.sum(np.diff(apts, axis=0)**2, axis=1)) # Length between corners
+    path_length = np.sum(lengths)
+    
+    return path_length, apts
+    
 if __name__ == '__main__':
     n_drones = 10
-    random_home_locations, random_loiters = randomize_drone_outer_locations(n_drones)
-    random_uavs = spawn_uavs(random_home_locations, random_loiters)
+    pts = [(0,0,4), (0,1,2), (3,1,3), (3,0,4)] #
+    # apts = np.array(pts)
+    # lengths = np.sqrt(np.sum(np.diff(apts, axis=0)**2, axis=1)) # Length between corners
+    # total_length = np.sum(lengths)
+    path_length, array = compute_path_length(pts)
+    best_distance = compute_euclidean(pts[0], pts[-1])
+    
+    if (best_distance/path_length) < 0.5:
+        print("not optimal")
+    else:
+        print("optimal")
+    
+    # random_home_locations, random_loiters = randomize_drone_outer_locations(n_drones)
+    # random_uavs = spawn_uavs(random_home_locations, random_loiters)
     
