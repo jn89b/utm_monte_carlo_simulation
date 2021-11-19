@@ -3,9 +3,9 @@ from setuptools import find_packages
 from setuptools import setup
 
 setup(
-      name="checkers_app",
+      name="UTM",
       version ="1.0.0",
-      author="ASE",
+      author="Justin Nguyen",
       packages=['utm_monte_carlo_simulation', 'scripts'],
       #packages = find_packages(),
       #scripts=[],

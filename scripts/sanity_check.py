@@ -15,7 +15,7 @@ from queue import PriorityQueue
 import matplotlib.pyplot as plt
 
 """UTM drones"""
-import Drone
+#import Drone
 import UTMDatabase
 import PathFinding
 
@@ -30,7 +30,7 @@ import os
 import logging
 import csv
 import io
-import pandas as pd
+#import pandas as pd
 
 """this will be part of the homebase class as attributes"""
 MAX_X = 200
@@ -43,6 +43,142 @@ INNER_MIN_Y = 0
 INNER_MAX_X = 49
 INNER_MAX_Y = 49
 
+
+class QuadCopter():
+    """
+    Class to represent quadcopter
+    '''
+    
+    Attributes
+    --------------
+    id : str  might want to change to an int
+        the id number or name of the UAV 
+    starting_position  list[int]
+        coordinates of the quadcopter
+    goal : list[int]
+        goal destination of quadcopter
+    zone_index : int
+        index number of zone destination
+    path : list[[int_x,int_y], ...] 
+        waypoint path of quad after assignment of landing zone
+    service_state : int
+        service state of the quadcopter 0,1,2,3
+    
+    Methods: 
+    ----------------
+    get_uav_state(self)
+    go_to_wp()
+    update_position()
+    apply_pid()
+    update_service_status()
+    set_zone_index()
+    set_path()
+    set_goal()
+    
+    
+    """
+    
+    speed_vector = [0.5]
+    k = 0.85
+    
+    def __init__(self, id_name ,home_position, loiter_position, curr_position, want_service):
+        self.id = id_name
+        self.home_position = home_position
+        self.loiter_position = loiter_position
+        self.current_position = curr_position
+        self.want_service = want_service
+        self.zone_index = None
+        self.path = None
+        self.goal = None
+        self.service_state = None
+        self.distance_from_base = None 
+        self.wp_index = 0
+        self.path_home = None
+        self.mission_success = None # true or false based on success rate of mission
+        self.weighted_heuristics = None #[min, max ] weighted scale 
+        self.sim_num = None
+        
+    def get_uav_state(self):
+        return self.service_state
+    
+    def __lt__(self, other):
+        return self.distance_from_base < other.distance_from_base
+    
+    def go_to_wp(self, current_position, wp):
+        """
+        send the drone to the waypoint position
+        waypoint is a tuple
+        """
+        while self.current_position != wp:
+            gain = self.apply_pid(current_position, wp)
+            current_position = np.array(self.current_position) + gain
+            self.current_position = list(current_position)
+            
+            if tuple(self.current_position) == wp:
+                self.update_position(wp)
+                #print("arrived to wp", self.current_position)
+                break
+        
+    def update_position(self, new_position):
+        self.current_position = new_position
+
+    def apply_pid(self, current_position,wp):
+        """get gains needed to get to area"""
+        error = np.array(wp) - np.array(current_position)
+        
+        return error*self.k
+    
+    def update_service_state(self, state_num):
+        """mutator"""
+        self.service_state = state_num
+        
+    def set_zone_index(self, zone_index):
+        """mutator"""
+        self.zone_index = zone_index
+
+    def set_path(self, path):
+        """mutator to assign path list"""
+        self.path = path
+        
+    def set_path_home(self, path_home):
+        self.path_home = path_home
+        
+    def set_goal(self, goal):
+        """mutator to assign goal[x,y,z] point"""
+        self.goal = goal 
+    
+    def set_mission_success(self, true_or_false):
+        self.mission_success = true_or_false
+    
+    def begin_charging(self):
+        print("I'm charging", self.id)
+        
+    def set_distance_from_base(self, distance_from_base):
+        self.distance_from_base = distance_from_base
+
+    def set_heuristics(self, weighted_heuristics):
+        self.weighted_heuristics = weighted_heuristics
+
+    def get_service_state(self):
+        return self.service_state
+    
+    def set_sim_num(self, sim_num):
+        self.sim_num = sim_num
+    
+    def to_dict(self):
+        return {
+            'uav_id': self.id,
+            'uav_home': self.home_position,
+            'loiter_position': self.loiter_position,
+            'path_to_target': self.path,
+            'path_to_home': self.path_home,
+            'zone assigned': self.zone_index,
+            'zone location': self.goal,
+            'min_max_weighted_heuristics': self.weighted_heuristics,
+            'sim_num': self.sim_num,
+            'mission success?' : self.mission_success
+            }
+        
 
 class HomeBase():
     GRID_Z = 50
@@ -625,7 +761,7 @@ class HomeSenderService():
     def send_wp_commands(self, uavs_with_wp_list, uav):  
         """send waypoint commands to uav"""
         waypoint_list = uav.path_home
-        print("SENDING HOME ", uav.id)
+        #print("SENDING HOME ", uav.id)
         # for idx,wp in enumerate(waypoint_list):
         #     uav.go_to_wp(uav.current_position,wp)
         #     if idx > (len(waypoint_list)-1):
@@ -713,11 +849,19 @@ def randomize_drone_outer_locations(n_drones):
                 while check_spawn_okay(coords, spawned_locations) == False:
                     print("drones too close")
                     coords = [case_edge[decision], np.random.choice(range(MIN_Y, MAX_Y)), np.random.choice(range(min_height, max_height))]
+                    if check_spawn_okay(coords, spawned_locations) == True:
+                        break
+                    else:
+                        continue
             
             if check_spawn_okay(loiter, loiter_locations) == False:
                 while check_spawn_okay(loiter, loiter_locations) == False:
                     loiter = [inner_case_edge[decision], np.random.choice(range(INNER_MIN_Y, INNER_MAX_Y)), np.random.choice(range(min_height, max_height))]
-            
+                    if check_spawn_okay(loiter, loiter_locations) == True:
+                        break
+                    else:
+                        continue
+
             print(coords,loiter)
             loiter_locations.append(loiter)
             spawned_locations.append(coords)
@@ -729,12 +873,19 @@ def randomize_drone_outer_locations(n_drones):
                 while check_spawn_okay(coords, spawned_locations) == False:
                     print("drones too close")
                     coords = [np.random.choice(range(MIN_X, MAX_X)),case_edge[decision], np.random.choice(range(min_height, max_height))]
+                    if check_spawn_okay(coords, spawned_locations) == True:
+                        break
+                    else:
+                        continue
             
             if check_spawn_okay(loiter, loiter_locations) == False:
                 while check_spawn_okay(loiter, loiter_locations) == False:
                     loiter = [ np.random.choice(range(INNER_MIN_X, INNER_MAX_X)), inner_case_edge[decision],np.random.choice(range(min_height, max_height))]
-            
-            #print(coords,loiter)
+                    if check_spawn_okay(loiter, loiter_locations) == True:
+                        break
+                    else:
+                        continue
+                    
             loiter_locations.append(loiter)
             spawned_locations.append(coords)            
 
@@ -745,7 +896,7 @@ def spawn_uavs(home_position_list, loiter_locaiton_list):
     uavs_list = []
     for idx, home_position in enumerate(home_position_list):
         uav_id = "uav"+str(idx)
-        uav = Drone.QuadCopter(uav_id, home_position, loiter_locaiton_list[idx], loiter_locaiton_list[idx], True)
+        uav = QuadCopter(uav_id, home_position, loiter_locaiton_list[idx], loiter_locaiton_list[idx], True)
         uavs_list.append(uav)
 
     return uavs_list
@@ -785,16 +936,17 @@ def compute_euclidean(position, goal):
 
 def run_utm(n_simulations, min_drones, max_drones, min_h, max_h):
     """begin simulation"""
-    homeBase = HomeBase()
+    
     performance = []
     logger = MonteCarloLogger()
     results = []
-    for i in range(0,n_simulations):
+    for i in range(735,n_simulations):
         print("Simulation number", i)
         """garbage collection"""
         global_db = {}
+        homeBase = HomeBase()
         gc.collect()    
-        n_drones = np.random.choice((min_drones,max_drones))
+        n_drones = random.randint(min_drones, max_drones)
         random_uavs = begin_randomization(n_drones)
         overallDb = UTMDatabase.OverallDatabase()
         overall_db = overallDb.listen_for_incoming_uavs(random_uavs)    
@@ -823,30 +975,16 @@ def run_utm(n_simulations, min_drones, max_drones, min_h, max_h):
                 break
             
             pathSenderService.main() 
+            gc.collect()    
             landingServiceState.main()
             post_flight_result = postFlightService.main()
             
             if post_flight_result == False:
                 print("post flight was a failure ")
                 mission_status = False
-                #result = logger.convert_info_to_list(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
-                #results.append(result)
-                #logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
-                #performance.append(False)
                 break
                 
             response = homeSenderService.main()
-            # if response == False:
-            #     print("post flight was a failure ")
-            #     mission_status = False
-            #     #result = logger.convert_info_to_list(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
-            #     #results.append(result)
-            #     logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
-            #     performance.append(False)
-            #     break
-            # if homeSenderService.main() == None:
-            #     print("something went wrong")
-            #     return performance, global_landing_db,n_drones, results
             
             uavs_leftover = check_mission_status(global_landing_db)
         
@@ -857,7 +995,7 @@ def run_utm(n_simulations, min_drones, max_drones, min_h, max_h):
                     ideal_path = 2*compute_euclidean(uav.loiter_position, uav.goal) 
                     init_path = compute_path_length(uav.path)
                     final_path = compute_path_length(uav.path_home[:-1])
-                    if (ideal_path)/(init_path + final_path) <= 0.65:
+                    if (ideal_path)/(init_path + final_path) <= 0.50:
                         mission_status = False
                         performance.append(False)
                         logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
@@ -883,11 +1021,7 @@ class MonteCarloLogger():
             - success or failure 
     """
     def __init__(self):# sim_num, n_drones, dict_db, performance, heuristics):
-        #self.sim_num = sim_num
-        #self.n_drones = n_drones
-        
-        #self.performance = performance
-        #self.heuristics = heuristics
+
         self.save_path = os.getcwd() + "\logs"
         self.filename = "monte_carlo_sim"
         #self.filename = "simnum_"+str(sim_num)+"_drones_"+ str(n_drones)
@@ -914,19 +1048,17 @@ class MonteCarloLogger():
             dict_writer.writeheader()
             dict_writer.writerows(dataframe_list)
         
-        print("recorded information to ", self.complete_directory)
+        print("recorded information to ", complete_directory)
         
-    def convert_dict_df(self, info_list):
-        return pd.DataFrame(info_list)
         
 if __name__ == '__main__':    
     """weighted heuristics for astar"""
     min_h = 0.5
     max_h = 1.5
     start = time.time()
-    n_simulations = 5
-    min_uavs = 3
-    max_uavs = 5
+    n_simulations = 1000
+    min_uavs = 4
+    max_uavs = 20
     
     performance, db, n_drones, results = run_utm(n_simulations, min_uavs, max_uavs, min_h, max_h)
     
