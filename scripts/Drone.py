@@ -59,6 +59,8 @@ class QuadCopter():
         self.wp_index = 0
         self.path_home = None
         self.mission_success = None # true or false based on success rate of mission
+        self.weighted_heuristics = None #[min, max ] weighted scale 
+        self.sim_num = None
         
     def get_uav_state(self):
         return self.service_state
@@ -117,17 +119,26 @@ class QuadCopter():
         
     def set_distance_from_base(self, distance_from_base):
         self.distance_from_base = distance_from_base
-        
+
+    def set_heuristics(self, weighted_heuristics):
+        self.weighted_heuristics = weighted_heuristics
+
     def get_service_state(self):
         return self.service_state
+    
+    def set_sim_num(self, sim_num):
+        self.sim_num = sim_num
     
     def to_dict(self):
         return {
             'uav_id': self.id,
+            'uav_home': self.home_position,
             'path_to_target': self.path,
             'path_to_home': self.path_home,
             'zone assigned': self.zone_index,
             'zone location': self.goal,
+            'min_max_weighted_heuristics': self.weighted_heuristics,
+            'sim_num': self.sim_num,
             'mission success?' : self.mission_success
             }
         

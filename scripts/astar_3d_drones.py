@@ -170,7 +170,7 @@ class Astar():
         #while len(self.openset) > 0:
             count = count + 1
             #print(count)
-            if count >= 5000:
+            if count >= 4000:
                 print("iterations too much")
                 return self.closedset
             
@@ -241,14 +241,14 @@ class Astar():
                     cost = self.compute_euclidean(current_node.position, child)
                     child.g = current_node.g + 1
                     child.h = self.compute_euclidean(child.position, self.end_node)
-                    dynamic_weight = 5.0
+                    dynamic_weight = 2.5
                     child.f = child.g + (child.h *penalty*dynamic_weight)
                     print(child.f)
                 else:
                     cost = self.compute_euclidean(current_node.position, child)
                     #print(current_node.g)
                     child.g = current_node.g + 1
-                    dynamic_weight = 5.0
+                    dynamic_weight = 2.0
                     child.h = self.compute_euclidean(child.position, self.end_node)
                     child.f = child.g + (child.h *penalty*dynamic_weight)
                 #print(child.f)

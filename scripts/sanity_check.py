@@ -308,7 +308,7 @@ class PreLandingService():
                     print("Failed to find path", uav.id)
                     return False
             else:
-                print("no open zones")
+                #print("no open zones")
                 continue
             
             
@@ -406,12 +406,12 @@ class LandingStateService():
         uav.path.append(tuple(landing_spot))
         uav.go_to_wp(uav.current_position, landing_spot)
         uav.update_service_state(self.update_service_number)
-        print("uav has landed")
+        #print("uav has landed")
     
     def main(self):
         uavs_landing = self.get_uavs_requesting_land()
         if not uavs_landing:
-            print("no drones for Landing State")
+            return None
         else:
             threads = []
             for idx, uav in enumerate(uavs_landing[:]):
@@ -648,8 +648,11 @@ class HomeSenderService():
             
     def main(self):
         uavs_with_wp_list = self.get_uavs_with_wps()
+        time.sleep(1)
         if not uavs_with_wp_list:
             print("no drones to send home")
+            return False
+            #return continue
         else:
             threads = []
             for idx, uav in enumerate(uavs_with_wp_list[:]):
@@ -780,15 +783,17 @@ def compute_euclidean(position, goal):
     return distance
 
 
-def run_utm(n_simulations, min_drones, max_drones):
+def run_utm(n_simulations, min_drones, max_drones, min_h, max_h):
     """begin simulation"""
     homeBase = HomeBase()
     performance = []
-    
+    logger = MonteCarloLogger()
+    results = []
     for i in range(0,n_simulations):
+        print("Simulation number", i)
         """garbage collection"""
+        global_db = {}
         gc.collect()    
-
         n_drones = np.random.choice((min_drones,max_drones))
         random_uavs = begin_randomization(n_drones)
         overallDb = UTMDatabase.OverallDatabase()
@@ -806,53 +811,64 @@ def run_utm(n_simulations, min_drones, max_drones):
         homeSenderService = HomeSenderService(homeBase, global_landing_db)
         
         uavs_leftover = check_mission_status(global_landing_db)
-        
+
         while uavs_leftover:
-            print("starting simulation")
+            gc.collect()    
+            gc.set_debug(gc.DEBUG_LEAK)
             prelanding_result = preLandingService.main()
             if prelanding_result == False:
-                print("mission fail")
-                performance.append(False)
+                mission_status = False
                 """log data"""
-                logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
-                logger.write_csv()
+                logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
                 break
-        
-            pathSenderService.main()
+            
+            pathSenderService.main() 
             landingServiceState.main()
             post_flight_result = postFlightService.main()
             
             if post_flight_result == False:
                 print("post flight was a failure ")
-                logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
-                logger.write_csv()
-                performance.append(False)
+                mission_status = False
+                #result = logger.convert_info_to_list(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
+                #results.append(result)
+                #logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
+                #performance.append(False)
                 break
                 
-            homeSenderService.main()
+            response = homeSenderService.main()
+            # if response == False:
+            #     print("post flight was a failure ")
+            #     mission_status = False
+            #     #result = logger.convert_info_to_list(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
+            #     #results.append(result)
+            #     logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
+            #     performance.append(False)
+            #     break
+            # if homeSenderService.main() == None:
+            #     print("something went wrong")
+            #     return performance, global_landing_db,n_drones, results
+            
             uavs_leftover = check_mission_status(global_landing_db)
         
             """check if mission was a success"""
             if not uavs_leftover:
-                print("mission success")
                 for uav_id, uav in global_landing_db.items():
                     #multiply by 2 since its backwards and forwards
                     ideal_path = 2*compute_euclidean(uav.loiter_position, uav.goal) 
                     init_path = compute_path_length(uav.path)
                     final_path = compute_path_length(uav.path_home[:-1])
                     if (ideal_path)/(init_path + final_path) <= 0.65:
-                        print("not an ideal path")
+                        mission_status = False
                         performance.append(False)
-                        logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, False)
-                        logger.write_csv()
+                        logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
                         break
-                    else:    
+                    else:
+                        mission_status = True
                         performance.append(True)
-                        logger = MonteCarloLogger(n_simulations, n_drones, global_landing_db, True)
-                        logger.write_csv()
+                        logger.write_csv(i, n_drones, global_landing_db, mission_status, [min_h,max_h])
                         break
-                
-    return performance, global_landing_db,n_drones
+            
+    return performance, global_landing_db,n_drones, results
 
 class MonteCarloLogger():
     """
@@ -866,49 +882,53 @@ class MonteCarloLogger():
             - uav flight path based on order of control
             - success or failure 
     """
-    def __init__(self, sim_num, n_drones, dict_db, performance):
-        self.sim_num = sim_num
-        self.n_drones = n_drones
-        self.dict_db = dict_db
-        self.performance = performance
+    def __init__(self):# sim_num, n_drones, dict_db, performance, heuristics):
+        #self.sim_num = sim_num
+        #self.n_drones = n_drones
         
+        #self.performance = performance
+        #self.heuristics = heuristics
         self.save_path = os.getcwd() + "\logs"
-        self.filename = "simnum_"+str(sim_num)+"_drones_"+ str(n_drones)
+        self.filename = "monte_carlo_sim"
+        #self.filename = "simnum_"+str(sim_num)+"_drones_"+ str(n_drones)
         self.complete_directory =  os.path.join(self.save_path, self.filename+".csv")
         #complete_directory = os.path.join(save_path, filename+".csv")
         
-    def convert_info_to_list(self):
+    def convert_info_to_list(self, sim_num, n_drones, dict_db, performance, heuristics):
         dataframe_list = []
-        for idx, (uav_id, uav) in enumerate(self.dict_db.items()):
-            uav.set_mission_success(self.performance)
+        for idx, (uav_id, uav) in enumerate(dict_db.items()):
+            uav.set_mission_success(performance)
+            uav.set_heuristics(heuristics)
+            uav.set_sim_num(sim_num)
             dataframe_list.append(uav.to_dict())
         
         return dataframe_list
     
-    def write_csv(self):
-        dataframe_list = self.convert_info_to_list()
+    def write_csv(self,  sim_num, n_drones, dict_db, performance, heuristics):
+        dataframe_list = self.convert_info_to_list(sim_num, n_drones, dict_db, performance, heuristics)
         keys = dataframe_list[0].keys()
-        with open( self.complete_directory, 'w', newline='') as output_file:
+        filename = "simnum_"+str(sim_num)+"_drones_"+ str(n_drones)
+        complete_directory = os.path.join(self.save_path, filename+".csv")
+        with open( complete_directory, 'w', newline='') as output_file:
             dict_writer = csv.DictWriter(output_file, keys)
             dict_writer.writeheader()
             dict_writer.writerows(dataframe_list)
         
         print("recorded information to ", self.complete_directory)
         
+    def convert_dict_df(self, info_list):
+        return pd.DataFrame(info_list)
+        
 if __name__ == '__main__':    
     """weighted heuristics for astar"""
     min_h = 0.5
     max_h = 1.5
     start = time.time()
-    n_simulations = 1
+    n_simulations = 5
     min_uavs = 3
     max_uavs = 5
-    performance, db, n_drones = run_utm(n_simulations, min_uavs, max_uavs)
-    print("time it takes", time.time() - start)         
     
-    """convert uav information into dictionary and append to list"""
-    # logger = MonteCarloLogger(n_simulations, n_drones, db)
-    # logger.write_csv()
+    performance, db, n_drones, results = run_utm(n_simulations, min_uavs, max_uavs, min_h, max_h)
     
         
     # df = pd.read_csv(logger.complete_directory)
